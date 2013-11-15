@@ -48,3 +48,25 @@
 //#define USERHOOK_MEDIUMLOOP userhook_MediumLoop();        // for code to be run at 10hz
 //#define USERHOOK_SLOWLOOP userhook_SlowLoop();            // for code to be run at 3.3hz
 //#define USERHOOK_SUPERSLOWLOOP userhook_SuperSlowLoop();  // for code to be run at 1hz
+
+// Flight modes
+// ------------
+#define ROLL_PITCH_HYBRID_LOIT         8       // pilot input roll, pitch angles when sticks are moved
+
+// Flight mode roll, pitch, yaw, throttle and navigation definitions
+// HYBRID_LOIT Mode
+#ifndef HYBRID_LOIT_YAW
+ # define HYBRID_LOIT_YAW          	YAW_HOLD
+#endif
+
+#ifndef HYBRID_LOIT_RP
+ # define HYBRID_LOIT_RP            ROLL_PITCH_HYBRID_LOIT
+#endif
+
+#ifndef HYBRID_LOIT_THR
+ # define HYBRID_LOIT_THR           THROTTLE_HOLD
+#endif
+
+#ifndef HYBRID_LOIT_NAV
+ # define HYBRID_LOIT_NAV           NAV_LOITER
+#endif

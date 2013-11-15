@@ -1587,6 +1587,12 @@ bool set_roll_pitch_mode(uint8_t new_roll_pitch_mode)
             }
             break;
 #endif
+        case ROLL_PITCH_HYBRID_LOIT:
+            // require gps lock
+            if( ap.home_is_set ) {
+                roll_pitch_initialised = true;
+            }
+            break;
     }
 
     // if initialisation has been successful update the yaw mode
@@ -1614,6 +1620,15 @@ void exit_roll_pitch_mode(uint8_t old_roll_pitch_mode)
 // 100hz update rate
 void update_roll_pitch_mode(void)
 {
+    static uint8_t hybrid_roll_mode = 3;        //1=stab, 2=transition, 3=loiter
+    static uint8_t hybrid_pitch_mode = 30;      //10=stab, 20=transition, 30=loiter
+    static int32_t brake_roll = 0;              //used for transition mode in hybrid_loiter
+    static int32_t brake_pitch = 0;             //used for transition mode in hybrid_loiter
+    #define BRAKE_RATE 10.0                       //set it from 5 to 20, means the number of deg/s the copter rolls/tilt during braking
+    #define MAX_BRAKING_ANGLE 3000                       //set it from 2000 to 4500 in centidegrees
+    #define SPEED_MAX_BRAKING 1500                       //the min speed in cm/s that requires full braking angle
+    #define SPEED_0 10                       //the max speed in cm/s to consider we have no more velocity for switching to loiter
+       
     switch(roll_pitch_mode) {
     case ROLL_PITCH_ACRO:
         // copy user input for reporting purposes
@@ -1728,6 +1743,98 @@ void update_roll_pitch_mode(void)
         get_autotune_roll_pitch_controller(g.rc_1.control_in, g.rc_2.control_in, g.rc_4.control_in);
         break;
 #endif
+    case ROLL_PITCH_HYBRID_LOIT:
+        //Memo - hybrid_roll_mode : 1=stab, 2=transition, 3=loiter
+        //Memo - hybrid_pitch_mode : 10=stab, 20=transition, 30=loiter
+
+        // apply SIMPLE mode transform
+        update_simple_mode(); //TO-DO check if useless or if we keep it
+        
+        // get lat/lon velocities and convert them to Forward velocity and Right velocity in cm/s
+        Vector3f vel = inertial_nav.get_velocity();
+        //vel.x = lat, vel.y = lon
+        float vel_fw = vel.x*cos_yaw + vel.y*sin_yaw;
+        float vel_right = -vel.x*sin_yaw + vel.y*cos_yaw;
+      
+        //define roll/pitch modes from stick input
+        //get roll stick input and update new roll mode
+        //TO-DO check with Sandro code if detection is improved and replace the 200 value by wp_nav.loiter_deadband
+        if(abs(g.rc_1.control_in) > 200) { //stick input detected => direct to stab mode
+            hybrid_roll_mode = 1;
+            brake_roll = 0;                 //reset for next transition
+        }else if(hybrid_roll_mode == 1){    //stick released from stab => transition mode
+            hybrid_roll_mode = 2;
+        }else if(hybrid_roll_mode == 2 && abs(vel_right)<SPEED_0){    //stick released and transition finished (speed 0) => loiter mode
+            hybrid_roll_mode = 3;
+        }
+        //get pitch stick input and update new pitch mode
+        if(abs(g.rc_2.control_in) > 200) {  //stick input detected => direct to stab mode
+            hybrid_pitch_mode = 10;
+            brake_pitch = 0;                //reset for next transition
+        }else if(hybrid_pitch_mode == 10){  //stick released from stab => transition mode
+            hybrid_pitch_mode = 20;
+        }else if(hybrid_pitch_mode == 20 && abs(vel_fw)<SPEED_0){    //stick released and transition finished (speed 0) => loiter mode
+            hybrid_pitch_mode = 30;
+        }
+          
+        // convert pilot input to lean angles
+        // only called if necessary
+        // Returns control_roll (int16) and control_pitch mode stab
+        if(hybrid_roll_mode == 1 || hybrid_pitch_mode == 10){
+            get_pilot_desired_lean_angles(g.rc_1.control_in, g.rc_2.control_in, control_roll, control_pitch);
+        }
+        // only called if necessary
+        // Transition on roll and/or pitch axis
+        if(hybrid_roll_mode == 2 || hybrid_pitch_mode == 20){
+            if(vel_fw>=0){
+                brake_pitch = min(brake_pitch+BRAKE_RATE,min(vel_fw*MAX_BRAKING_ANGLE/SPEED_MAX_BRAKING,MAX_BRAKING_ANGLE)); //positive pitch means go backward
+            }else{
+                brake_pitch = max(brake_pitch-BRAKE_RATE,max(vel_fw*MAX_BRAKING_ANGLE/SPEED_MAX_BRAKING,-MAX_BRAKING_ANGLE));
+            }
+            if(vel_right>=0){
+                brake_roll = max(brake_roll-BRAKE_RATE,max(vel_right*MAX_BRAKING_ANGLE/SPEED_MAX_BRAKING,-MAX_BRAKING_ANGLE)); //negative roll means go left
+            }else{
+                brake_roll = min(brake_roll+BRAKE_RATE,min(vel_right*MAX_BRAKING_ANGLE/SPEED_MAX_BRAKING,MAX_BRAKING_ANGLE)); 
+            }                  
+        } 
+        // only called if necessary
+        // Loiter nav_roll/pitch update
+        if(hybrid_roll_mode == 3 || hybrid_pitch_mode == 30){
+            // update loiter target from user controls - control_roll and pitch are set to 0
+            wp_nav.move_loiter_target(0, 0,0.01f);
+        }        
+        
+        
+        // TO-DO add wind offset compensation
+        // TO-DO the wind offset will be updated once in loiter, and only when the velocity of the considered axis is 0
+        // Don't update Roll offset for example is we go forward with yaw<>0 because the yawing will create an acceleration and then velocity on the tangential axis (here, the roll one)
+        // Once wind compensated, mind to constraint min/max angles (default +/- 4500)
+        
+        //To-delete Grab inertial velocity
+        //fprintf(stdout,"vel %1.2f\n",vel.z);
+        
+        // Mode execution
+        // Call the stabilize controllers with the roll/pitch angles previously calculated
+        switch(hybrid_roll_mode + hybrid_pitch_mode) {
+        case 11: //roll & pitch stable
+            get_stabilize_roll(control_roll);
+            get_stabilize_pitch(control_pitch);
+            break;
+            
+        case 12: // pitch stable & roll transition
+        get_stabilize_roll(brake_roll);
+        get_stabilize_pitch(control_pitch);
+        break;
+        
+        case 13: // pitch stable & roll loiter
+        get_stabilize_roll(wp_nav.get_desired_roll());
+        get_stabilize_pitch(control_pitch);
+        break;
+        
+        //Develop cases 21,22,23,31,32,33 on that model once finished
+        
+        }
+        break;
     }
 
 	#if FRAME_CONFIG != HELI_FRAME

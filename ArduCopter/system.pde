@@ -307,6 +307,7 @@ static bool mode_requires_GPS(uint8_t mode) {
         case RTL:
         case CIRCLE:
         case POSITION:
+        case HYBRID_LOIT:
             return true;
         default:
             return false;
@@ -459,6 +460,20 @@ static bool set_mode(uint8_t mode)
             acro_pitch = ahrs.pitch_sensor;
             nav_yaw = ahrs.yaw_sensor;
             break;
+            
+        case HYBRID_LOIT:
+            //Throttle_hold mode : OK for all cases because it
+            //detects if taken off and apply a boost otherwise
+            //is applying an angle boost when we roll/pitch       
+            //Yaw_Hold mode : OK for all cases            
+            if (GPS_ok() || ignore_checks) {
+                success = true;
+                set_yaw_mode(YAW_HOLD);
+                set_roll_pitch_mode(HYBRID_LOIT_RP); //particular mode developped in arducopter.pde
+                set_throttle_mode(THROTTLE_HOLD);
+                set_nav_mode(HYBRID_LOIT_NAV); //TO-DO, maybe has to be set by submodes in arducopter.pde
+            }          
+            break;            
 
         default:
             success = false;
@@ -597,6 +612,9 @@ print_flight_mode(AP_HAL::BetterStream *port, uint8_t mode)
         break;
     case SPORT:
         port->print_P(PSTR("SPORT"));
+        break;
+    case HYBRID_LOIT:
+        port->print_P(PSTR("HYBRID_LOITER"));
         break;
     default:
         port->printf_P(PSTR("Mode(%u)"), (unsigned)mode);

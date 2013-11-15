@@ -923,6 +923,8 @@ static int16_t get_angle_boost(int16_t throttle)
 #else   // all multicopters
 // get_angle_boost - returns a throttle including compensation for roll/pitch angle
 // throttle value should be 0 ~ 1000
+// TO-DO : Add speed compensation because the current angle boost works only when speed is 0
+// voir d'abord si la vitesse d'avance est négligeable par rapport la vitesse de l'air nécessaire à la lévitation
 static int16_t get_angle_boost(int16_t throttle)
 {
     float temp = cos_pitch_x * cos_roll_x;
