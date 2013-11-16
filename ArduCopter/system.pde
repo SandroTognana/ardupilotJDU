@@ -471,7 +471,7 @@ static bool set_mode(uint8_t mode)
                 set_yaw_mode(YAW_HOLD);
                 set_roll_pitch_mode(HYBRID_LOIT_RP); //particular mode developped in arducopter.pde
                 set_throttle_mode(THROTTLE_HOLD);
-                set_nav_mode(HYBRID_LOIT_NAV); //TO-DO, maybe has to be set by submodes in arducopter.pde
+                //set_nav_mode(HYBRID_LOIT_NAV); //Called by Hybrid_loiter submodes in arducopter.pde
             }          
             break;            
 

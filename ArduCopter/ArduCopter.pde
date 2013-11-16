@@ -1765,7 +1765,10 @@ void update_roll_pitch_mode(void)
         }else if(hybrid_roll_mode == 1){    //stick released from stab => transition mode
             hybrid_roll_mode = 2;
         }else if(hybrid_roll_mode == 2 && abs(vel_right)<SPEED_0){    //stick released and transition finished (speed 0) => loiter mode
-            hybrid_roll_mode = 3;
+            hybrid_roll_mode = 3;           
+            if(nav_mode == NAV_LOITER){     //If the Loiter nav mode has been already set by pitch, it's now running and we have to init loiter target for roll
+                wp_nav.init_loiter_target(inertial_nav.get_position(), inertial_nav.get_velocity());
+            }
         }
         //get pitch stick input and update new pitch mode
         if(abs(g.rc_2.control_in) > 200) {  //stick input detected => direct to stab mode
@@ -1775,6 +1778,9 @@ void update_roll_pitch_mode(void)
             hybrid_pitch_mode = 20;
         }else if(hybrid_pitch_mode == 20 && abs(vel_fw)<SPEED_0){    //stick released and transition finished (speed 0) => loiter mode
             hybrid_pitch_mode = 30;
+            if(nav_mode == NAV_LOITER){     //If the Loiter nav mode has been already set by roll, it's now running and we have to init loiter target for pitch
+                wp_nav.init_loiter_target(inertial_nav.get_position(), inertial_nav.get_velocity());
+            }
         }
           
         // convert pilot input to lean angles
@@ -1798,13 +1804,13 @@ void update_roll_pitch_mode(void)
             }                  
         } 
         // only called if necessary
-        // Loiter nav_roll/pitch update
+        // Nav_mode init.
         if(hybrid_roll_mode == 3 || hybrid_pitch_mode == 30){
-            // update loiter target from user controls - control_roll and pitch are set to 0
-            wp_nav.move_loiter_target(0, 0,0.01f);
-        }        
-        
-        
+            set_nav_mode(HYBRID_LOIT_NAV);  //this funtion will call init_loiter_target function but only ONCE, that set pilot input to 0, no need of wp_nav.move_loiter_target(0, 0,0.01f);
+                                            //and will set the loiter nav mode - required for wp_nav.update_loiter() 100Hz called by update_nav_mode()
+        }else{                              //No loiter required for both axis
+            set_nav_mode(NAV_NONE);         //Alt Hold nav mode
+        }
         // TO-DO add wind offset compensation
         // TO-DO the wind offset will be updated once in loiter, and only when the velocity of the considered axis is 0
         // Don't update Roll offset for example is we go forward with yaw<>0 because the yawing will create an acceleration and then velocity on the tangential axis (here, the roll one)
@@ -1822,18 +1828,46 @@ void update_roll_pitch_mode(void)
             break;
             
         case 12: // pitch stable & roll transition
-        get_stabilize_roll(brake_roll);
-        get_stabilize_pitch(control_pitch);
+            get_stabilize_roll(brake_roll);
+            get_stabilize_pitch(control_pitch);
         break;
         
         case 13: // pitch stable & roll loiter
-        get_stabilize_roll(wp_nav.get_desired_roll());
-        get_stabilize_pitch(control_pitch);
+            get_stabilize_roll(wp_nav.get_desired_roll());
+            get_stabilize_pitch(control_pitch);
+        break;
+
+        case 21: // pitch transition & roll stable
+            get_stabilize_roll(control_roll);
+            get_stabilize_pitch(brake_pitch);
+            break;
+            
+        case 22: // pitch transition & roll transition
+            get_stabilize_roll(brake_roll);
+            get_stabilize_pitch(brake_pitch);
         break;
         
-        //Develop cases 21,22,23,31,32,33 on that model once finished
+        case 23: // pitch transition & roll loiter
+            get_stabilize_roll(wp_nav.get_desired_roll());
+            get_stabilize_pitch(brake_pitch);
+        break;
+
+        case 31: // pitch loiter & roll stable
+            get_stabilize_roll(control_roll);
+            get_stabilize_pitch(wp_nav.get_desired_pitch());
+            break;
+            
+        case 32: // pitch loiter & roll transition
+            get_stabilize_roll(brake_roll);
+            get_stabilize_pitch(wp_nav.get_desired_pitch());
+        break;
         
+        case 33: // pitch loiter & roll loiter
+            get_stabilize_roll(wp_nav.get_desired_roll());
+            get_stabilize_pitch(wp_nav.get_desired_pitch());
+        break;           
         }
+        
         break;
     }
 
